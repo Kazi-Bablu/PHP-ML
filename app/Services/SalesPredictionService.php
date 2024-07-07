@@ -1,73 +1,61 @@
 <?php
 
+// app/Services/SalesPredictionService.php
+
 namespace App\Services;
 
 use Carbon\Carbon;
 use DB;
-use Phpml\Dataset\ArrayDataset;
+use Phpml\Metric\Regression;
 use Phpml\Regression\LeastSquares;
-use Phpml\Preprocessing\Normalizer;
 
 class SalesPredictionService
 {
-    /**
-     * Train a sales prediction model based on historical data.
-     *
-     * @return LeastSquares
-     */
     public function trainModel()
     {
         // Fetch historical sales data
         $sales = DB::table('sales')
-            ->select(
-                DB::raw('DATE(created_at) as date'),
-                DB::raw('SUM(quantity) as quantity'),
-                DB::raw('DAYOFWEEK(created_at) as day_of_week'),
-                DB::raw('MONTH(created_at) as month'),
-                DB::raw('YEAR(created_at) as year')
-            )
-            ->groupBy('date', 'day_of_week', 'month', 'year')
-            ->get();
+            ->select(DB::raw('DATE(created_at) as date'), DB::raw('SUM(quantity) as quantity'))
+            ->groupBy('date')
+            ->orderBy('date')
+            ->get()
+            ->chunk(1000); // Chunking data to handle large datasets efficiently
 
         $samples = [];
         $targets = [];
 
-        foreach ($sales as $sale) {
-            $date = Carbon::parse($sale->date);
-            $sample = [
-                $date->timestamp,
-                $date->dayOfWeek,
-                $date->month,
-            ];
-
-            $samples[] = $sample;
-            $targets[] = $sale->quantity;
+        foreach ($sales as $chunk) {
+            foreach ($chunk as $sale) {
+                $samples[] = [Carbon::parse($sale->date)->timestamp];
+                $targets[] = $sale->quantity;
+            }
         }
 
-        // Normalize features
-        $normalizer = new Normalizer();
-        $samples = $normalizer->transform($samples);
-
-        // Create dataset
-        $dataset = new ArrayDataset($samples, $targets);
-
-        // Train model
         $regression = new LeastSquares();
-        $regression->train($dataset->getSamples(), $dataset->getTargets());
+        $regression->train($samples, $targets);
 
-        // Evaluate the model (optional)
-        //$this->evaluateModel($regression, $samples, $targets);
+        // Evaluate the model
+        $this->evaluateModel($regression, $samples, $targets);
 
         return $regression;
     }
 
-    /**
-     * Predict daily sales quantities for the next `days` days.
-     *
-     * @param LeastSquares $model
-     * @param int $days
-     * @return array
-     */
+    public function evaluateModel($model, $samples, $targets)
+    {
+        $predicted = [];
+        foreach ($samples as $sample) {
+            $predicted[] = $model->predict($sample);
+        }
+
+        $mae = Regression::meanAbsoluteError($targets, $predicted);
+        $mse = Regression::meanSquaredError($targets, $predicted);
+        $r2 = Regression::r2score($targets, $predicted);
+
+        echo "Mean Absolute Error (MAE): " . $mae . PHP_EOL;
+        echo "Mean Squared Error (MSE): " . $mse . PHP_EOL;
+        echo "R² Score: " . $r2 . PHP_EOL;
+    }
+
     public function predictDailySales($model, $days)
     {
         $predictions = [];
@@ -75,15 +63,15 @@ class SalesPredictionService
 
         for ($i = 0; $i < $days; $i++) {
             $date = $currentDate->copy()->addDays($i)->startOfDay();
-            $sample = [$date->timestamp, $date->dayOfWeek, $date->month];
-            $predictedQuantity = $model->predict($sample);
+            $timestamp = $date->timestamp;
+            $predictedQuantity = $model->predict([$timestamp]);
 
             $predictions[] = [
                 'date' => $date->toDateString(),
                 'predicted_quantity' => $predictedQuantity,
-                'lower_bound' => null,
-                'upper_bound' => null,
-                'probability' => null,
+                'lower_bound' => null, // Optional: you can remove these if you are not calculating them
+                'upper_bound' => null, // Optional: you can remove these if you are not calculating them
+                'probability' => null, // Optional: you can remove this if you are not calculating it
             ];
         }
 
