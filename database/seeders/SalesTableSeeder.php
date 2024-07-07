@@ -1,0 +1,33 @@
+<?php
+
+namespace Database\Seeders;
+
+use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
+use Faker\Factory as Faker;
+
+class SalesTableSeeder extends Seeder
+{
+    public function run()
+    {
+        $faker = Faker::create();
+        $batchSize = 10000; // Adjust the batch size as needed
+        $totalRecords = 200000;
+
+        for ($i = 0; $i < $totalRecords; $i += $batchSize) {
+            $salesData = [];
+
+            for ($j = 0; $j < $batchSize; $j++) {
+                $salesData[] = [
+                    'product_id' => $faker->numberBetween(1, 1000),
+                    'quantity' => $faker->numberBetween(1, 100),
+                    'price' => $faker->randomFloat(2, 1, 100000),
+                    'created_at' => $faker->dateTimeBetween('-6 months', 'now'),
+                    'updated_at' => now(),
+                ];
+            }
+
+            DB::table('sales')->insert($salesData);
+        }
+    }
+}
