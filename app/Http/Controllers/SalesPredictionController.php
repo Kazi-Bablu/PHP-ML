@@ -21,10 +21,6 @@ class SalesPredictionController extends Controller
         $model = $this->salesPredictionService->trainModel();
         $predictions = $this->salesPredictionService->predictDailySales($model, $days);
 
-        $response = [
-            'daily_predictions' => $predictions,
-        ];
-
-        return response()->json($response);
+        return response()->json($predictions);
     }
 }
